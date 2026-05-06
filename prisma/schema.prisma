@@ -1,0 +1,33 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [citext]
+}
+
+enum UserRole {
+  job_seeker
+  recruiter
+  admin
+}
+
+model User {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                String    @unique @db.Citext
+  contactNo            String?   @unique @map("contact_no") @db.VarChar(20)
+  passwordHash         String    @map("password_hash")
+  role                 UserRole
+  isAccountActive      Boolean   @default(true) @map("is_account_active")
+  accessToken          String?   @map("access_token")
+  refreshToken         String?   @map("refresh_token")
+  lastLoginAt          DateTime? @map("last_login_at") @db.Timestamptz
+  accountDeactivatedAt DateTime? @map("account_deactivated_at") @db.Timestamptz
+  accountReactivatedAt DateTime? @map("account_reactivated_at") @db.Timestamptz
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("users")
+}
