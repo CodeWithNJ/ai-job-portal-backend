@@ -21,7 +21,6 @@ model User {
   passwordHash         String    @map("password_hash")
   role                 UserRole
   isAccountActive      Boolean   @default(true) @map("is_account_active")
-  accessToken          String?   @map("access_token")
   refreshToken         String?   @map("refresh_token")
   lastLoginAt          DateTime? @map("last_login_at") @db.Timestamptz
   accountDeactivatedAt DateTime? @map("account_deactivated_at") @db.Timestamptz
