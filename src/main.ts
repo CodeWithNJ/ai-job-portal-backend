@@ -10,6 +10,20 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
+  // The frontend (Vite dev server) is served from a different origin and
+  // relies on HttpOnly auth cookies, so we must allow credentialed CORS.
+  // CORS_ORIGIN supports a comma-separated list; falls back to common Vite
+  // dev origins for local development.
+  const corsOriginEnv = process.env.CORS_ORIGIN;
+  const corsOrigin = corsOriginEnv
+    ? corsOriginEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

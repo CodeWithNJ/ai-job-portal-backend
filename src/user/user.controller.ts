@@ -25,7 +25,7 @@ export class UserController {
     private readonly configService: ConfigService,
   ) {}
 
-  @Post('signin')
+  @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   @ResponseMessage('User account created successfully')
   async createNewUser(@Body() createUserDto: CreateUserDto) {
@@ -33,7 +33,7 @@ export class UserController {
     return user;
   }
 
-  @Post('login')
+  @Post('signin')
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Login successful')
   async loginUser(
