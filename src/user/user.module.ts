@@ -17,5 +17,8 @@ import { AccessTokenGuard } from './guards/access-token.guard';
     EncryptionService,
     AccessTokenGuard,
   ],
+  // Exported so feature modules (e.g. ProfileModule) can guard their routes
+  // with the same cookie-based access token authentication.
+  exports: [TokenService, AccessTokenGuard],
 })
 export class UserModule {}
