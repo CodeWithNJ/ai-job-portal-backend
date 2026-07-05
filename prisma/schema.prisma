@@ -29,5 +29,90 @@ model User {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
+  jobSeekerProfile JobSeekerProfile?
+  recruiterProfile RecruiterProfile?
+
   @@map("users")
+}
+
+enum ResumeParseStatus {
+  not_started
+  pending
+  processing
+  completed
+  failed
+}
+
+model JobSeekerProfile {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  headline        String?  @db.VarChar(255)
+  summary         String?
+  skills          String[] @default([])
+  experienceYears Float?   @map("experience_years")
+  // Work-history entries: [{ title, company, startDate, endDate, description }]
+  experience      Json?
+  // Education entries: [{ degree, institution, year }]
+  education       Json?
+  location        String?  @db.VarChar(255)
+  // { jobTypes: string[], remotePreference, expectedCompensation, noticePeriodDays }
+  workPreferences Json?    @map("work_preferences")
+
+  // Resume file metadata. resumeUrl holds the storage key (not a public URL)
+  // so the storage backend can be swapped (local disk -> S3/R2) without a
+  // data migration.
+  resumeUrl        String?   @map("resume_url")
+  resumeFileName   String?   @map("resume_file_name") @db.VarChar(255)
+  resumeMimeType   String?   @map("resume_mime_type") @db.VarChar(100)
+  resumeUploadedAt DateTime? @map("resume_uploaded_at") @db.Timestamptz
+
+  // Structured extraction output, including per-section confidence scores.
+  // Kept separate from the editable profile fields above so parsing never
+  // clobbers manual corrections (PRD: manual correction support).
+  resumeParseStatus ResumeParseStatus @default(not_started) @map("resume_parse_status")
+  parsedResume      Json?             @map("parsed_resume")
+  resumeParsedAt    DateTime?         @map("resume_parsed_at") @db.Timestamptz
+  resumeParseError  String?           @map("resume_parse_error")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("job_seeker_profiles")
+}
+
+model Company {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String  @unique @db.Citext
+  website     String? @db.VarChar(255)
+  industry    String? @db.VarChar(100)
+  size        String? @db.VarChar(50)
+  location    String? @db.VarChar(255)
+  description String?
+  logoUrl     String? @map("logo_url")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  recruiterProfiles RecruiterProfile[]
+
+  @@map("companies")
+}
+
+model RecruiterProfile {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  companyId String?  @map("company_id") @db.Uuid
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  designation String? @db.VarChar(150)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([companyId])
+  @@map("recruiter_profiles")
 }
