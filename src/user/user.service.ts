@@ -14,6 +14,7 @@ import { EncryptionService } from '../common/services/encryption.service';
 
 export interface AuthenticatedUserSummary {
   id: string;
+  fullName: string | null;
   email: string;
   role: UserRole;
   lastLoginAt: Date | null;
@@ -40,7 +41,7 @@ export class UserService {
   ) {}
 
   async createNewUser(createUserDto: CreateUserDto) {
-    const { email, contactNo, role, password } = createUserDto;
+    const { fullName, email, contactNo, role, password } = createUserDto;
 
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
@@ -60,6 +61,7 @@ export class UserService {
 
     const user = await this.prisma.user.create({
       data: {
+        fullName: fullName.trim(),
         email,
         contactNo,
         passwordHash: hashedPassword,
@@ -67,6 +69,7 @@ export class UserService {
       },
       select: {
         id: true,
+        fullName: true,
         email: true,
         contactNo: true,
         role: true,
@@ -240,6 +243,7 @@ export class UserService {
       where: { id: userId },
       select: {
         id: true,
+        fullName: true,
         email: true,
         contactNo: true,
         role: true,
@@ -309,6 +313,7 @@ export class UserService {
       },
       select: {
         id: true,
+        fullName: true,
         email: true,
         role: true,
         lastLoginAt: true,
@@ -317,6 +322,7 @@ export class UserService {
 
     return {
       id: updated.id,
+      fullName: updated.fullName,
       email: updated.email,
       role: updated.role as UserRole,
       lastLoginAt: updated.lastLoginAt,
