@@ -17,6 +17,12 @@ export enum UserRole {
 
 export class CreateUserDto {
   @IsNotEmpty()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  fullName!: string;
+
+  @IsNotEmpty()
   @IsEmail()
   @MaxLength(255)
   email!: string;
@@ -31,7 +37,7 @@ export class CreateUserDto {
 
   @IsNotEmpty()
   @IsString()
-  @MinLength(4)
+  @MinLength(8)
   @MaxLength(128)
   password!: string;
 
