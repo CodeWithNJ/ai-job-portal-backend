@@ -121,7 +121,7 @@ export class UserController {
    * boot to silently rehydrate session state from the access cookie — this is
    * what makes "Keep me signed in" visible to the user.
    */
-  @Get('profile')
+  @Get('me')
   @UseGuards(AccessTokenGuard)
   @ResponseMessage('Profile fetched successfully')
   async getProfile(@CurrentUser() currentUser: AuthJwtPayload) {
