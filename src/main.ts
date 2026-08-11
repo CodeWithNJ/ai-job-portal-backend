@@ -1,10 +1,11 @@
-import { ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { raw } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { formatValidationErrors } from './common/utils/format-validation-errors';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -42,6 +43,11 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       transform: true,
       transformOptions: { enableImplicitConversion: true },
+      // Collapse each failing property to its single most explanatory message
+      // instead of every constraint it tripped. Kept in sync with the
+      // runtime-DTO path in `validateBody`, which uses the same formatter.
+      exceptionFactory: (errors) =>
+        new BadRequestException(formatValidationErrors(errors)),
     }),
   );
 

@@ -1,7 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import type { ClassConstructor } from 'class-transformer';
-import { validate, ValidationError } from 'class-validator';
+import { validate } from 'class-validator';
+import { formatValidationErrors } from './format-validation-errors';
 
 /**
  * Validates an untyped request body against a DTO class and returns the typed
@@ -22,26 +23,8 @@ export async function validateBody<T extends object>(
   });
 
   if (errors.length > 0) {
-    throw new BadRequestException(flattenValidationErrors(errors));
+    throw new BadRequestException(formatValidationErrors(errors));
   }
 
   return instance;
-}
-
-function flattenValidationErrors(
-  errors: ValidationError[],
-  parentPath = '',
-): string[] {
-  return errors.flatMap((error) => {
-    const path = parentPath
-      ? `${parentPath}.${error.property}`
-      : error.property;
-    const own = Object.values(error.constraints ?? {}).map((message) =>
-      parentPath ? `${path}: ${message}` : message,
-    );
-    const nested = error.children?.length
-      ? flattenValidationErrors(error.children, path)
-      : [];
-    return [...own, ...nested];
-  });
 }
