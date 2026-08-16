@@ -67,6 +67,7 @@ The API is being built incrementally against the PRD's Phase 1 (MVP) scope.
 | **Recruiter profile**   | Designation plus company upsert-and-link by case-insensitive name                                             |
 | **Resume upload**       | S3-style signed-URL flow, PDF/DOCX only, magic-byte verification, size cap, pluggable storage backend         |
 | **API conventions**     | Uniform success/error response envelope, strict global validation, centralised exception handling             |
+| **Outbound email**      | `MailModule` with swappable transports — a no-network `log` transport for development, SMTP for real delivery |
 
 ### Not yet built
 
@@ -75,7 +76,7 @@ In MVP scope per the PRD, but not implemented in this repository yet:
 - Job post authoring (create / publish / edit / pause / close) and the `Job` model
 - Application workflow, pipeline states, and recruiter notes
 - The resume **parsing** pipeline — the schema columns and status enum exist (`resumeParseStatus`, `parsedResume`, `resumeParsedAt`, `resumeParseError`), but nothing writes to them yet
-- **Email verification and password reset** — the data model is in place (`verification_tokens` table, `VerificationTokenType` enum, `users.isEmailVerified` / `emailVerifiedAt` / `passwordChangedAt`) and the configuration is declared, but there is no mail transport, no token service, and no endpoints yet. `isEmailVerified` is written by nothing and read by nothing; treat every account as unverified.
+- **Email verification and password reset** — the data model is in place (`verification_tokens` table, `VerificationTokenType` enum, `users.isEmailVerified` / `emailVerifiedAt` / `passwordChangedAt`) and `MailModule` can render and deliver both messages, but there is no token service and no endpoints yet, so nothing calls it. `isEmailVerified` is written by nothing and read by nothing; treat every account as unverified.
 - Embeddings, vector storage, hybrid retrieval, and recommendation services
 - Notifications, moderation, admin console, analytics instrumentation
 - Rate limiting on the auth routes
@@ -185,25 +186,34 @@ CORS defaults to `http://localhost:5173` and `http://127.0.0.1:5173` (Vite dev s
 
 Missing `JWT_ACCESS_TOKEN_SECRET`, `JWT_REFRESH_TOKEN_SECRET`, `REFRESH_TOKEN_ENCRYPTION_KEY`, or `UPLOAD_URL_SIGNING_SECRET` fails fast at boot rather than degrading silently.
 
+### Mail
+
+Read by `MailService`. Under the default `log` transport every SMTP value is ignored, so local development needs none of them.
+
+| Variable                       | Required             | Example                              | Purpose                                                                     |
+| ------------------------------ | -------------------- | ------------------------------------ | --------------------------------------------------------------------------- |
+| `MAIL_TRANSPORT`               | no                   | `log`                                | `log` renders to the Nest logger and opens no socket; `smtp` sends for real |
+| `MAIL_FROM`                    | when `smtp`          | `no-reply@example.com`               | Envelope sender; defaults to `no-reply@localhost` under `log`               |
+| `MAIL_FROM_NAME`               | no                   | `AI Job Portal`                      | Display name wrapped around `MAIL_FROM`                                     |
+| `SMTP_HOST`                    | when `smtp`          | `smtp-relay.brevo.com`               | SMTP server host                                                            |
+| `SMTP_PORT`                    | no                   | `587`                                | SMTP server port; defaults to `587`                                         |
+| `SMTP_USER`                    | with `SMTP_PASSWORD` | _(provider username)_                | Omit both for relays that accept unauthenticated submission                 |
+| `SMTP_PASSWORD`                | with `SMTP_USER`     | _(provider password / app password)_ | Rejected at boot if only one of the pair is set                             |
+| `SMTP_SECURE`                  | no                   | `false`                              | `true` for implicit TLS on port 465; `false` for STARTTLS on 587            |
+| `EMAIL_VERIFICATION_TOKEN_TTL` | no                   | `24h`                                | Verification token lifetime; also the expiry stated in the email            |
+| `PASSWORD_RESET_TOKEN_TTL`     | no                   | `30m`                                | Reset token lifetime; also the expiry stated in the email                   |
+
+An unset or unrecognised `MAIL_TRANSPORT` falls back to `log` with a warning — a misconfiguration should fail towards "don't send real email". Missing `MAIL_FROM` or `SMTP_HOST` under `MAIL_TRANSPORT=smtp` throws at boot rather than failing on the first send.
+
+Both TTLs are read in two places by design: the token service enforces them, and `MailService` prints the configured value into the message body ("this link expires in 24h"), so the stated and enforced expiry cannot drift.
+
 ### Declared but not yet read
 
-These are present in `.env.example` ahead of the email verification and password reset work. **No code reads them today** — setting them changes nothing until those features land.
+| Variable            | Required | Example                 | Purpose                                                    |
+| ------------------- | -------- | ----------------------- | ---------------------------------------------------------- |
+| `FRONTEND_BASE_URL` | later    | `http://localhost:5173` | SPA origin used to build clickable links in outbound email |
 
-| Variable                       | Required | Example                              | Purpose                                                            |
-| ------------------------------ | -------- | ------------------------------------ | ------------------------------------------------------------------ |
-| `FRONTEND_BASE_URL`            | later    | `http://localhost:5173`              | SPA origin used to build clickable links in outbound email         |
-| `EMAIL_VERIFICATION_TOKEN_TTL` | later    | `24h`                                | Lifetime of an email verification token                            |
-| `PASSWORD_RESET_TOKEN_TTL`     | later    | `30m`                                | Lifetime of a password reset token                                 |
-| `MAIL_TRANSPORT`               | later    | `log`                                | `log` writes the message to the Nest logger; `smtp` sends for real |
-| `MAIL_FROM`                    | later    | `no-reply@example.com`               | Envelope sender address                                            |
-| `MAIL_FROM_NAME`               | later    | `AI Job Portal`                      | Display name on outbound mail                                      |
-| `SMTP_HOST`                    | later    | `smtp-relay.brevo.com`               | SMTP server host (only when `MAIL_TRANSPORT=smtp`)                 |
-| `SMTP_PORT`                    | later    | `587`                                | SMTP server port                                                   |
-| `SMTP_USER`                    | later    | _(provider username)_                | SMTP username                                                      |
-| `SMTP_PASSWORD`                | later    | _(provider password / app password)_ | SMTP password                                                      |
-| `SMTP_SECURE`                  | later    | `false`                              | `true` for implicit TLS on port 465; `false` for STARTTLS on 587   |
-
-`FRONTEND_BASE_URL` is deliberately separate from `APP_BASE_URL`: the latter is this API's own origin (used to sign upload URLs), while email links must point at the SPA.
+`MailService` takes a fully-formed link from its caller and never builds URLs, so this stays unread until the token service and endpoints land. It is deliberately separate from `APP_BASE_URL`: the latter is this API's own origin (used to sign upload URLs), while email links must point at the SPA.
 
 The TTL values are parsed by `parseExpiryToSeconds()` (see [Project structure](#project-structure)), so they accept the same `15m` / `24h` / `7d` / bare-seconds syntax as the JWT lifetimes.
 
@@ -259,6 +269,9 @@ src/
     resume-upload.controller.ts  PUT /uploads/resumes/:token (signed, unauthenticated)
     profile.service.ts           Role-dispatched profile logic, upload completion
     dto/                         Job seeker / recruiter / upload-URL DTOs
+  mail/
+    mail.service.ts          Transport selection and the single send path
+    templates.ts             Pure (subject, html, text) renderers per message type
   storage/
     upload-url.service.ts    HMAC signed-token issuing and verification
     file-storage.service.ts  Local-disk backend keyed by S3-style object keys
