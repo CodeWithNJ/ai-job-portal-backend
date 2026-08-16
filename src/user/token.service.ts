@@ -1,12 +1,9 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { UserRole } from './dto/create-user.dto';
+import { parseExpiryToSeconds } from 'src/common/utils/parse-expiry';
 
 export interface AuthJwtPayload {
   /** Standard JWT subject claim — also the user's UUID. */
@@ -36,8 +33,6 @@ export interface IssuedTokens {
 
 @Injectable()
 export class TokenService {
-  private readonly logger = new Logger(TokenService.name);
-
   private readonly accessSecret: string;
   private readonly accessExpiresInSeconds: number;
   private readonly refreshSecret: string;
@@ -50,13 +45,13 @@ export class TokenService {
   ) {
     this.accessSecret = this.requireEnv('JWT_ACCESS_TOKEN_SECRET');
     this.refreshSecret = this.requireEnv('JWT_REFRESH_TOKEN_SECRET');
-    this.accessExpiresInSeconds = this.parseExpiryToSeconds(
+    this.accessExpiresInSeconds = parseExpiryToSeconds(
       this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRES_IN') ?? '15m',
     );
 
     // "Keep me signed in" → long-lived refresh token. Falls back to the legacy
     // JWT_REFRESH_TOKEN_EXPIRES_IN env var so existing deployments keep working.
-    this.rememberRefreshExpiresInSeconds = this.parseExpiryToSeconds(
+    this.rememberRefreshExpiresInSeconds = parseExpiryToSeconds(
       this.configService.get<string>('JWT_REFRESH_TOKEN_REMEMBER_EXPIRES_IN') ??
         this.configService.get<string>('JWT_REFRESH_TOKEN_EXPIRES_IN') ??
         '30d',
@@ -65,7 +60,7 @@ export class TokenService {
     // Without "Keep me signed in" the refresh cookie is also a session cookie
     // (no maxAge), but we still cap the server-side JWT lifetime defensively
     // in case the browser ever retains the cookie across restarts.
-    this.sessionRefreshExpiresInSeconds = this.parseExpiryToSeconds(
+    this.sessionRefreshExpiresInSeconds = parseExpiryToSeconds(
       this.configService.get<string>('JWT_REFRESH_TOKEN_SESSION_EXPIRES_IN') ??
         '1d',
     );
@@ -119,33 +114,5 @@ export class TokenService {
       throw new InternalServerErrorException(`${key} is not configured`);
     }
     return value;
-  }
-
-  /**
-   * Parses values like `15m`, `7d`, `3600s`, or a bare number of seconds and
-   * returns the equivalent number of seconds.
-   */
-  private parseExpiryToSeconds(expression: string): number {
-    const trimmed = expression.trim();
-    const match = /^(\d+)\s*([smhd])?$/i.exec(trimmed);
-
-    if (!match) {
-      this.logger.warn(
-        `Unable to parse expiry expression "${expression}"; defaulting to 900s`,
-      );
-      return 900;
-    }
-
-    const value = Number(match[1]);
-    const unit = (match[2] ?? 's').toLowerCase();
-
-    const unitToSeconds: Record<string, number> = {
-      s: 1,
-      m: 60,
-      h: 60 * 60,
-      d: 24 * 60 * 60,
-    };
-
-    return value * unitToSeconds[unit];
   }
 }
