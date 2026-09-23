@@ -6,6 +6,7 @@ import { PrismaService } from 'src/prisma.service';
 import { TokenService } from './token.service';
 import { EncryptionService } from '../common/services/encryption.service';
 import { AccessTokenGuard } from './guards/access-token.guard';
+import { VerificationTokenService } from './verification-token.service';
 
 @Module({
   imports: [JwtModule.register({})],
@@ -16,9 +17,10 @@ import { AccessTokenGuard } from './guards/access-token.guard';
     TokenService,
     EncryptionService,
     AccessTokenGuard,
+    VerificationTokenService,
   ],
   // Exported so feature modules (e.g. ProfileModule) can guard their routes
   // with the same cookie-based access token authentication.
-  exports: [TokenService, AccessTokenGuard],
+  exports: [TokenService, AccessTokenGuard, VerificationTokenService],
 })
 export class UserModule {}

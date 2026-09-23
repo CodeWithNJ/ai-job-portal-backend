@@ -1,6 +1,6 @@
 import {
   IsEmail,
-  IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -14,6 +14,10 @@ export enum UserRole {
   RECRUITER = 'recruiter',
   ADMIN = 'admin',
 }
+
+// Admin accounts are provisioned out of band; self-signup must never grant them.
+export const SIGNUP_ROLES = [UserRole.JOB_SEEKER, UserRole.RECRUITER] as const;
+export type SignupRole = (typeof SIGNUP_ROLES)[number];
 
 export class CreateUserDto {
   @IsNotEmpty()
@@ -42,6 +46,8 @@ export class CreateUserDto {
   password!: string;
 
   @IsNotEmpty()
-  @IsEnum(UserRole)
-  role!: UserRole;
+  @IsIn(SIGNUP_ROLES, {
+    message: `role must be one of the following values: ${SIGNUP_ROLES.join(', ')}`,
+  })
+  role!: SignupRole;
 }
