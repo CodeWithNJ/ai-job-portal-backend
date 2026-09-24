@@ -35,6 +35,7 @@ model User {
   jobSeekerProfile   JobSeekerProfile?
   recruiterProfile   RecruiterProfile?
   verificationTokens VerificationToken[]
+  ownedCompanies     Company[]           @relation("CompanyOwner")
 
   @@map("users")
 }
@@ -96,11 +97,17 @@ model Company {
   description String?
   logoUrl     String? @map("logo_url")
 
+  // The only user allowed to edit this company's details. Nullable so a
+  // company outlives its owner's account (and for rows predating ownership).
+  ownerUserId String? @map("owner_user_id") @db.Uuid
+  owner       User?   @relation("CompanyOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   recruiterProfiles RecruiterProfile[]
 
+  @@index([ownerUserId])
   @@map("companies")
 }
 
