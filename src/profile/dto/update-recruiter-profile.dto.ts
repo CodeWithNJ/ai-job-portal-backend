@@ -40,8 +40,10 @@ export class CompanyDetailsDto {
 }
 
 /**
- * Partial update for a recruiter's profile. Providing `company` upserts the
- * company by (case-insensitive) name and links the recruiter to it.
+ * Partial update for a recruiter's profile. Providing `company` links the
+ * recruiter to it by (case-insensitive) name: a new name creates the company
+ * with the caller as owner; only the owner may change an existing company's
+ * details, and a company owned by someone else can't be joined (409).
  */
 export class UpdateRecruiterProfileDto {
   @IsOptional()

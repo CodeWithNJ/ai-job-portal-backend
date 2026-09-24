@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   PayloadTooLargeException,
@@ -24,7 +26,14 @@ import {
   ResumeMimeType,
 } from './dto/create-resume-upload-url.dto';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
-import { UpdateRecruiterProfileDto } from './dto/update-recruiter-profile.dto';
+import {
+  CompanyDetailsDto,
+  UpdateRecruiterProfileDto,
+} from './dto/update-recruiter-profile.dto';
+
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2002';
 
 const MIME_TO_EXTENSION: Record<ResumeMimeType, string> = {
   'application/pdf': 'pdf',
@@ -240,21 +249,9 @@ export class ProfileService {
     userId: string,
     dto: UpdateRecruiterProfileDto,
   ) {
-    let companyId: string | undefined;
-
-    if (dto.company) {
-      const { name, ...details } = dto.company;
-      const definedDetails = Object.fromEntries(
-        Object.entries(details).filter(([, value]) => value !== undefined),
-      );
-
-      const company = await this.prisma.company.upsert({
-        where: { name },
-        create: { name, ...definedDetails },
-        update: definedDetails,
-      });
-      companyId = company.id;
-    }
+    const companyId = dto.company
+      ? await this.resolveRecruiterCompany(userId, dto.company)
+      : undefined;
 
     const data: Prisma.RecruiterProfileUncheckedUpdateInput = {};
     if (dto.designation !== undefined) data.designation = dto.designation;
@@ -272,6 +269,79 @@ export class ProfileService {
     });
 
     return { role: UserRole.RECRUITER, profile };
+  }
+
+  /**
+   * Returns the id of the company a recruiter is linking to, enforcing
+   * ownership (names are case-insensitive):
+   * - unknown name: the company is created and the caller becomes its owner
+   * - owned by the caller: submitted details are applied
+   * - owned by someone else, caller already linked: link kept, edits refused
+   * - owned by someone else otherwise: refused, since joining an existing
+   *   company needs an invite flow that doesn't exist yet
+   */
+  private async resolveRecruiterCompany(
+    userId: string,
+    company: CompanyDetailsDto,
+  ): Promise<string> {
+    const { name, ...details } = company;
+    const definedDetails = Object.fromEntries(
+      Object.entries(details).filter(([, value]) => value !== undefined),
+    ) as Omit<CompanyDetailsDto, 'name'>;
+
+    let existing = await this.prisma.company.findUnique({ where: { name } });
+
+    if (!existing) {
+      try {
+        const created = await this.prisma.company.create({
+          data: { name, ...definedDetails, ownerUserId: userId },
+          select: { id: true },
+        });
+        return created.id;
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        // A concurrent request created the same name first; judge this
+        // request against the winner like any other existing company.
+        existing = await this.prisma.company.findUniqueOrThrow({
+          where: { name },
+        });
+      }
+    }
+
+    // Clients typically resend the whole form, so only values that differ
+    // from what's stored count as an edit.
+    const changedDetails = Object.fromEntries(
+      Object.entries(definedDetails).filter(
+        ([key, value]) => (existing as Record<string, unknown>)[key] !== value,
+      ),
+    );
+    const hasChanges = Object.keys(changedDetails).length > 0;
+
+    if (existing.ownerUserId === userId) {
+      if (hasChanges) {
+        await this.prisma.company.update({
+          where: { id: existing.id },
+          data: changedDetails,
+        });
+      }
+      return existing.id;
+    }
+
+    const current = await this.prisma.recruiterProfile.findUnique({
+      where: { userId },
+      select: { companyId: true },
+    });
+
+    if (current?.companyId === existing.id) {
+      if (hasChanges) {
+        throw new ForbiddenException(
+          'Only the company owner can edit its details',
+        );
+      }
+      return existing.id;
+    }
+
+    throw new ConflictException('This company is already registered');
   }
 
   /**
