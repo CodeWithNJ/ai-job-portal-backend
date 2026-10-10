@@ -19,7 +19,7 @@ import { ProfileService } from './profile.service';
  * pre-signed URL, the HMAC-signed, expiring token in the path is the
  * credential, and it is bound to one user, one storage key, and one MIME
  * type. The raw request body is provided by the express.raw() middleware
- * registered for this route in main.ts.
+ * registered for this route in app.setup.ts.
  */
 @Controller('uploads')
 export class ResumeUploadController {

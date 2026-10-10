@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { LoginUserDto } from './dto/login-user.dto';
 import { RefreshJwtPayload, TokenService } from './token.service';
 import { EncryptionService } from '../common/services/encryption.service';
+import { isUniqueViolation } from '../common/utils/prisma-errors';
 
 export interface AuthenticatedUserSummary {
   id: string;
@@ -43,15 +44,30 @@ export class UserService {
   async createNewUser(createUserDto: CreateUserDto) {
     const { fullName, email, contactNo, role, password } = createUserDto;
 
-    const existingUser = await this.prisma.user.findUnique({
+    // Both columns are unique. Checking up front gives a specific message;
+    // the catch below covers a concurrent signup slipping in between.
+    const existingEmail = await this.prisma.user.findUnique({
       where: { email },
       select: { id: true },
     });
 
-    if (existingUser) {
+    if (existingEmail) {
       throw new ConflictException(
         `Account already exists with this email: ${email}`,
       );
+    }
+
+    if (contactNo !== undefined) {
+      const existingContactNo = await this.prisma.user.findUnique({
+        where: { contactNo },
+        select: { id: true },
+      });
+
+      if (existingContactNo) {
+        throw new ConflictException(
+          'Account already exists with this contact number',
+        );
+      }
     }
 
     const hashedPassword = await bcrypt.hash(
@@ -59,25 +75,32 @@ export class UserService {
       UserService.BCRYPT_SALT_ROUNDS,
     );
 
-    const user = await this.prisma.user.create({
-      data: {
-        fullName: fullName.trim(),
-        email,
-        contactNo,
-        passwordHash: hashedPassword,
-        role,
-      },
-      select: {
-        id: true,
-        fullName: true,
-        email: true,
-        contactNo: true,
-        role: true,
-        isAccountActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const user = await this.prisma.user
+      .create({
+        data: {
+          fullName: fullName.trim(),
+          email,
+          contactNo,
+          passwordHash: hashedPassword,
+          role,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          contactNo: true,
+          role: true,
+          isAccountActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+      .catch((error: unknown) => {
+        if (!isUniqueViolation(error)) throw error;
+        throw new ConflictException(
+          'Account already exists with this email or contact number',
+        );
+      });
 
     this.logger.log(`New user created: ${user.id}`);
     return user;

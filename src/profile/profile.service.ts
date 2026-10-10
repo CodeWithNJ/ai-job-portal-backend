@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { instanceToPlain } from 'class-transformer';
 import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma.service';
+import { isUniqueViolation } from '../common/utils/prisma-errors';
 import { validateBody } from '../common/utils/validate-body';
 import { FileStorageService } from '../storage/file-storage.service';
 import {
@@ -30,10 +31,6 @@ import {
   CompanyDetailsDto,
   UpdateRecruiterProfileDto,
 } from './dto/update-recruiter-profile.dto';
-
-const isUniqueViolation = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  error.code === 'P2002';
 
 const MIME_TO_EXTENSION: Record<ResumeMimeType, string> = {
   'application/pdf': 'pdf',
