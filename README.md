@@ -251,6 +251,7 @@ src/
   app.setup.ts               configureApp(): cookies, raw-body route, CORS, global
                              pipe/interceptor/filter (shared with e2e tests)
   app.module.ts              Root module (global ConfigModule + feature modules)
+  prisma.module.ts           Global module providing the single PrismaService
   prisma.service.ts          PrismaClient over the pg driver adapter
   common/
     decorators/              @ResponseMessage(), @Roles()

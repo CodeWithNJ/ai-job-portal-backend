@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
 import { ProfileModule } from './profile/profile.module';
 import { MailModule } from './mail/mail.module';
+import { PrismaModule } from './prisma.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { MailModule } from './mail/mail.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    PrismaModule,
     UserModule,
     ProfileModule,
     MailModule,
