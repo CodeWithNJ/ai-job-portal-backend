@@ -6,6 +6,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { raw } from 'express';
+import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { formatValidationErrors } from './common/utils/format-validation-errors';
@@ -16,6 +17,19 @@ import { formatValidationErrors } from './common/utils/format-validation-errors'
  * the running server.
  */
 export function configureApp(app: INestApplication): void {
+  // Security headers on every response, including errors. Registered first so
+  // nothing can respond before it runs.
+  app.use(
+    helmet({
+      // Default is `same-origin`, which would stop the frontend from loading
+      // API-served files (e.g. a resume preview) in no-cors contexts like
+      // <iframe>/<embed>. `same-site` still blocks other sites: localhost
+      // ports, and app.example.com vs api.example.com, count as same-site.
+      // CORS fetch/XHR calls are unaffected either way.
+      crossOriginResourcePolicy: { policy: 'same-site' },
+    }),
+  );
+
   app.use(cookieParser());
 
   // Signed-URL resume uploads PUT the raw file bytes (PDF/DOCX), which the

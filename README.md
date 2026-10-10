@@ -248,7 +248,7 @@ prisma/
   migrations/                Ordered SQL migrations
 src/
   main.ts                    Bootstrap: create the app, apply configureApp(), listen
-  app.setup.ts               configureApp(): cookies, raw-body route, CORS, global
+  app.setup.ts               configureApp(): helmet, cookies, raw-body route, CORS, global
                              pipe/interceptor/filter (shared with e2e tests)
   app.module.ts              Root module (global ConfigModule + feature modules)
   prisma.module.ts           Global module providing the single PrismaService
@@ -626,6 +626,7 @@ Links a recruiter to a company with a `designation`, indexed on `companyId` for 
 | Upload content safety    | Declared-type check, magic-byte check, and size cap before anything is written                       |
 | Path traversal           | Storage keys are pattern-validated and the resolved path is asserted to stay inside the storage root |
 | RBAC                     | Role claim checked by `RolesGuard`; `@Roles()` is declarative per route                              |
+| Security headers         | `helmet` on every response (incl. errors); `X-Powered-By` removed; CORP set to `same-site`           |
 | Company ownership        | Only a company's owner can edit it; owned companies can't be joined by name (`409`)                  |
 
 **Before production:** set `COOKIE_SECURE=true`, serve over HTTPS, set `CORS_ORIGIN` to your real origins, move secrets into a managed secret store, replace `FileStorageService` with an object-storage backend, and add rate limiting on the auth routes.
