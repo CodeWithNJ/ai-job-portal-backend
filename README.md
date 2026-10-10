@@ -64,7 +64,7 @@ The API is being built incrementally against the PRD's Phase 1 (MVP) scope.
 | **"Keep me signed in"** | Preference encoded as a JWT claim so it survives token rotation without extra storage                         |
 | **RBAC**                | `job_seeker` / `recruiter` / `admin` roles, enforced by `@Roles()` + `RolesGuard`                             |
 | **Job seeker profile**  | Headline, summary, skills, experience years, work history, education, location, work preferences              |
-| **Recruiter profile**   | Designation plus company upsert-and-link by case-insensitive name                                             |
+| **Recruiter profile**   | Designation plus company linking by case-insensitive name; only a company's owner can edit its details        |
 | **Resume upload**       | S3-style signed-URL flow, PDF/DOCX only, magic-byte verification, size cap, pluggable storage backend         |
 | **API conventions**     | Uniform success/error response envelope, strict global validation, centralised exception handling             |
 | **Outbound email**      | `MailModule` with swappable transports — a no-network `log` transport for development, SMTP for real delivery |
@@ -235,6 +235,8 @@ The TTL values are parsed by `parseExpiryToSeconds()` (see [Project structure](#
 | `npm run lint`        | ESLint with `--fix`                       |
 | `npm run format`      | Prettier over `src/` and `test/`          |
 
+E2E tests boot the full app with the same pipeline as `main.ts` (via `configureApp()`) and run against the database in `DATABASE_URL`, so apply migrations first. Each suite tags the rows it creates with a per-run id and deletes them afterwards, so it is safe to point at a local dev database — never at production.
+
 ---
 
 ## Project structure
@@ -245,7 +247,9 @@ prisma/
                              VerificationToken)
   migrations/                Ordered SQL migrations
 src/
-  main.ts                    Bootstrap: cookies, raw-body route, CORS, global pipe/interceptor/filter
+  main.ts                    Bootstrap: create the app, apply configureApp(), listen
+  app.setup.ts               configureApp(): cookies, raw-body route, CORS, global
+                             pipe/interceptor/filter (shared with e2e tests)
   app.module.ts              Root module (global ConfigModule + feature modules)
   prisma.service.ts          PrismaClient over the pg driver adapter
   common/
@@ -433,7 +437,20 @@ All routes require the access cookie and run through `AccessTokenGuard` + `Roles
 
 `GET /profiles/me` creates an empty profile row on first access, so the client always receives an editable object rather than a 404. Admin callers get `400` — there is no admin profile shape.
 
-Responses are wrapped as `{ role, profile }`; recruiter responses include the linked `company`.
+Responses are wrapped as `{ role, profile }`. Recruiter responses also include the linked `company` (or `null`) and a `canEditCompany` flag, so the client can lock the company fields:
+
+```json
+{
+  "role": "recruiter",
+  "profile": {
+    "designation": "…",
+    "company": { "id": "…", "name": "Acme Corp", "…": "…" }
+  },
+  "canEditCompany": true
+}
+```
+
+`canEditCompany` is `true` when no company is linked yet (the recruiter may register one) or the caller owns the linked company. The company's owner id is never returned.
 
 **`PATCH /profiles/me` — job seeker body** (all fields optional; only what you send is written)
 
@@ -485,7 +502,17 @@ Resume and parsed-resume fields are **not** client-writable — they are owned b
 }
 ```
 
-Sending `company` upserts it by case-insensitive name and links the recruiter to it, so two recruiters entering "Acme Corp" and "acme corp" land on the same company row.
+Sending `company` links the recruiter to it by case-insensitive name ("Acme Corp" and "acme corp" are the same company). Ownership decides what happens:
+
+| Situation                                                  | Result                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| Name not registered yet                                    | Company is created, caller becomes its **owner** and is linked     |
+| Caller owns the company                                    | Changed details are applied (unchanged values are not rewritten)   |
+| Owned by someone else, caller not linked to it             | `409` "This company is already registered" — nothing is changed    |
+| Owned by someone else, caller already linked (legacy data) | `403` if any detail differs from what is stored; unchanged is fine |
+| Company has no owner                                       | Treated as owned by someone else                                   |
+
+Until an invite flow exists, each company has a single recruiter. Ownership is never transferred implicitly: an owner who links to another company keeps owning the old one, and deleting the owner's account leaves the company ownerless and locked until an admin reassigns it.
 
 **`POST /profiles/me/resume/upload-url`**
 
@@ -572,7 +599,7 @@ Keeping parsing output in its own column is what makes the PRD's "manual correct
 
 ### `companies`
 
-Shared employer records, unique on a `citext` name, so many recruiters can attach to one company. Cascade rules: deleting a `User` removes their profiles; deleting a `Company` sets `recruiter_profiles.company_id` to `NULL` rather than orphaning the recruiter.
+Employer records, unique on a `citext` name. `owner_user_id` points at the one user allowed to edit the company's details (see the ownership rules under [Profiles](#profiles--profiles)); it is nullable so a company outlives its owner's account. The schema allows many recruiters per company, but the API currently only links new recruiters to companies they create. Cascade rules: deleting a `User` removes their profiles and sets `companies.owner_user_id` to `NULL`; deleting a `Company` sets `recruiter_profiles.company_id` to `NULL` rather than orphaning the recruiter.
 
 ### `recruiter_profiles`
 
@@ -598,6 +625,7 @@ Links a recruiter to a company with a `designation`, indexed on `companyId` for 
 | Upload content safety    | Declared-type check, magic-byte check, and size cap before anything is written                       |
 | Path traversal           | Storage keys are pattern-validated and the resolved path is asserted to stay inside the storage root |
 | RBAC                     | Role claim checked by `RolesGuard`; `@Roles()` is declarative per route                              |
+| Company ownership        | Only a company's owner can edit it; owned companies can't be joined by name (`409`)                  |
 
 **Before production:** set `COOKIE_SECURE=true`, serve over HTTPS, set `CORS_ORIGIN` to your real origins, move secrets into a managed secret store, replace `FileStorageService` with an object-storage backend, and add rate limiting on the auth routes.
 
