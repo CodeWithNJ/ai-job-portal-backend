@@ -80,7 +80,7 @@ export class ProfileService {
         update: {},
         include: { company: true },
       });
-      return { role: currentUser.role, profile };
+      return this.toRecruiterProfileResponse(currentUser.sub, profile);
     }
 
     throw new BadRequestException(
@@ -268,7 +268,37 @@ export class ProfileService {
       include: { company: true },
     });
 
-    return { role: UserRole.RECRUITER, profile };
+    return this.toRecruiterProfileResponse(userId, profile);
+  }
+
+  /**
+   * Shapes a recruiter profile for clients. Adds `canEditCompany` so the UI
+   * can lock the company fields, and drops the company's owner id, which is
+   * another user's internal identifier.
+   *
+   * `canEditCompany` is true when no company is linked yet (the recruiter may
+   * register one) or the caller owns the linked company.
+   */
+  private toRecruiterProfileResponse(
+    userId: string,
+    profile: Prisma.RecruiterProfileGetPayload<{ include: { company: true } }>,
+  ) {
+    const { company, ...rest } = profile;
+    let canEditCompany = true;
+    let publicCompany: Omit<NonNullable<typeof company>, 'ownerUserId'> | null =
+      null;
+
+    if (company) {
+      const { ownerUserId, ...details } = company;
+      canEditCompany = ownerUserId === userId;
+      publicCompany = details;
+    }
+
+    return {
+      role: UserRole.RECRUITER,
+      profile: { ...rest, company: publicCompany },
+      canEditCompany,
+    };
   }
 
   /**
@@ -279,6 +309,13 @@ export class ProfileService {
    * - owned by someone else, caller already linked: link kept, edits refused
    * - owned by someone else otherwise: refused, since joining an existing
    *   company needs an invite flow that doesn't exist yet
+   *
+   * Ownership is never transferred implicitly:
+   * - an owner who links to a different company keeps owning the old one, so
+   *   they can switch back and the old company never becomes uneditable
+   * - deleting the owner's account clears ownerUserId (onDelete: SetNull);
+   *   the company then stays locked until an admin reassigns it. Letting
+   *   anyone claim an ownerless company would reopen name squatting.
    */
   private async resolveRecruiterCompany(
     userId: string,

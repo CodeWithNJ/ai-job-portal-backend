@@ -203,4 +203,95 @@ describe('ProfileService recruiter company ownership', () => {
     expect(prisma.company.findUnique).not.toHaveBeenCalled();
     expect(linkedCompanyId()).toBeUndefined();
   });
+
+  it('keeps ownership of the old company when the owner switches', async () => {
+    const NEW_COMPANY_ID = '44444444-4444-4444-8444-444444444444';
+    prisma.company.findUnique.mockResolvedValue(null);
+    prisma.company.create.mockResolvedValue({ id: NEW_COMPANY_ID });
+    prisma.recruiterProfile.findUnique.mockResolvedValue({
+      companyId: COMPANY_ID,
+    });
+
+    await service.updateMyProfile(recruiter(OWNER_ID), {
+      company: { name: 'Globex' },
+    });
+
+    // Only the new company is touched; nothing rewrites the old one's owner.
+    expect(prisma.company.update).not.toHaveBeenCalled();
+    expect(linkedCompanyId()).toBe(NEW_COMPANY_ID);
+  });
+
+  describe('canEditCompany in responses', () => {
+    const profileWith = (company: ReturnType<typeof storedCompany> | null) => ({
+      id: 'profile',
+      userId: OWNER_ID,
+      companyId: company?.id ?? null,
+      designation: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      company,
+    });
+
+    type RecruiterResponse = {
+      canEditCompany: boolean;
+      profile: { company: Record<string, unknown> | null };
+    };
+
+    const getAs = async (userId: string) =>
+      (await service.getMyProfile(recruiter(userId))) as RecruiterResponse;
+
+    it('is true for the owner, and the owner id is not exposed', async () => {
+      prisma.recruiterProfile.upsert.mockResolvedValue(
+        profileWith(storedCompany()),
+      );
+
+      const result = await getAs(OWNER_ID);
+
+      expect(result.canEditCompany).toBe(true);
+      expect(result.profile.company).toMatchObject({ name: 'Acme' });
+      expect(result.profile.company).not.toHaveProperty('ownerUserId');
+    });
+
+    it('is false for a linked non-owner', async () => {
+      prisma.recruiterProfile.upsert.mockResolvedValue(
+        profileWith(storedCompany()),
+      );
+
+      const result = await getAs(OTHER_ID);
+
+      expect(result.canEditCompany).toBe(false);
+      expect(result.profile.company).not.toHaveProperty('ownerUserId');
+    });
+
+    it('is false when the linked company has no owner', async () => {
+      prisma.recruiterProfile.upsert.mockResolvedValue(
+        profileWith(storedCompany({ ownerUserId: null })),
+      );
+
+      expect((await getAs(OWNER_ID)).canEditCompany).toBe(false);
+    });
+
+    it('is true when no company is linked yet', async () => {
+      prisma.recruiterProfile.upsert.mockResolvedValue(profileWith(null));
+
+      const result = await getAs(OWNER_ID);
+
+      expect(result.canEditCompany).toBe(true);
+      expect(result.profile.company).toBeNull();
+    });
+
+    it('is included in the PATCH response', async () => {
+      prisma.company.findUnique.mockResolvedValue(storedCompany());
+      prisma.recruiterProfile.upsert.mockResolvedValue(
+        profileWith(storedCompany()),
+      );
+
+      const result = (await service.updateMyProfile(recruiter(OWNER_ID), {
+        company: { name: 'Acme' },
+      })) as RecruiterResponse;
+
+      expect(result.canEditCompany).toBe(true);
+      expect(result.profile.company).not.toHaveProperty('ownerUserId');
+    });
+  });
 });
